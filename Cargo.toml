@@ -1,0 +1,16 @@
+[package]
+name = "emu_check_ui"
+version = "0.1.0"
+authors = ["Tom <tomvercaut@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+gdk = "^0"
+glib = "^0"
+gio = "^0"
+
+
+[dependencies.gtk]
+version = "^0"
+default-features = false
+features = ["v3_22"]
