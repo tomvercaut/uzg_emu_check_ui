@@ -356,49 +356,41 @@ async fn main() {
     // application.run(&[]);
 
     // // Experiment
-    // let mut res_ac = AppController::new(dirname, &args().collect::<Vec<_>>()).await;
-    // if let Err(e) = res_ac {
-    //     error!("AppController reported an error: {}", e);
+    // let res_application = gtk::Application::new(Some("org.tv.emu_check.ui"), Default::default())
+    //     .map_err(|e| AppError::GuiLaunch(e));
+    // if let Err(e) = res_application {
+    //     error!("{}", e);
     //     exit(1);
     // }
-    // let mut ac = res_ac?;
-    // ac.build();
-
-    let res_application = gtk::Application::new(Some("org.tv.emu_check.ui"), Default::default())
-        .map_err(|e| AppError::GuiLaunch(e));
-    if let Err(e) = res_application {
-        error!("{}", e);
-        exit(1);
-    }
-    let application = res_application.unwrap();
-
-    application.connect_activate(move |app| {
-        let (tx_background, rx_background) = std::sync::mpsc::channel();
-        let (tx_ui, rx_ui) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
-        // Create a controller
-        let res_controller =
-            AppController::new(dirname.as_str(), tx_background, rx_background, tx_ui, rx_ui);
-        result_if_error_exit!(res_controller);
-        let mut controller = res_controller.unwrap();
-
-        // Load the correction data
-        if let Err(e) = controller.load_correction_data() {
-            error!("{}", e);
-            exit(1);
-        }
-
-        // Build the user interface and actions
-        let res_build_ui = controller.build_ui();
-        result_if_error_exit!(res_build_ui);
-        let res_build_actions = controller.build_actions();
-        result_if_error_exit!(res_build_actions);
-
-        // Link the window and the application
-        let res_main_window = controller.get_main_window();
-        result_if_error_exit!(res_main_window);
-        let main_window = res_main_window.unwrap();
-        main_window.set_application(Some(app));
-        main_window.show_all();
-    });
-    application.run(&[]);
+    // let application = res_application.unwrap();
+    //
+    // application.connect_activate(move |app| {
+    //     let (tx_background, rx_background) = std::sync::mpsc::channel();
+    //     let (tx_ui, rx_ui) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+    //     // Create a controller
+    //     let res_controller =
+    //         AppController::new(dirname.as_str(), tx_background, rx_background, tx_ui, rx_ui);
+    //     result_if_error_exit!(res_controller);
+    //     let mut controller = res_controller.unwrap();
+    //
+    //     // Load the correction data
+    //     if let Err(e) = controller.load_correction_data() {
+    //         error!("{}", e);
+    //         exit(1);
+    //     }
+    //
+    //     // Build the user interface and actions
+    //     let res_build_ui = controller.build_ui();
+    //     result_if_error_exit!(res_build_ui);
+    //     let res_build_actions = controller.build_actions();
+    //     result_if_error_exit!(res_build_actions);
+    //
+    //     // Link the window and the application
+    //     let res_main_window = controller.get_main_window();
+    //     result_if_error_exit!(res_main_window);
+    //     let main_window = res_main_window.unwrap();
+    //     main_window.set_application(Some(app));
+    //     main_window.show_all();
+    // });
+    // application.run(&[]);
 }

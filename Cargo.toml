@@ -13,6 +13,8 @@ log = "0.4.8"
 simple_logger = "1.6.0"
 thiserror = "1.0.20"
 dirs = "3.0"
+flume = "0.9.0"
+cascade = "^1.0"
 
 [dependencies.gtk]
 version = "^0"
