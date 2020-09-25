@@ -1,13 +1,28 @@
 // #![windows_subsystem = "windows"]
+use async_std::prelude::*;
+use async_std::task;
 
 use gio::prelude::*;
 use glib::{clone, WeakRef};
 use gtk::prelude::*;
 use gtk::{Builder, TreeModel};
 
+use clap::{crate_authors, crate_description, crate_version, App, Arg};
+use emu_check_ui::{AppController, AppError, SelectedText};
 use gdk::keys::constants::P;
+use log::{error, trace, Level};
 use std::env::args;
+use std::process::exit;
 use std::rc::Rc;
+
+macro_rules! result_if_error_exit {
+    ($result:ident) => {
+        if let Err(e) = $result {
+            log::error!("{}", e);
+            std::process::exit(1);
+        }
+    };
+}
 
 fn build_ui(application: &gtk::Application) {
     let main_window_glade = include_str!("main_window.glade");
@@ -35,20 +50,6 @@ fn build_ui(application: &gtk::Application) {
     build_actions(&builder);
 
     cb_machine.set_active(Some(0));
-}
-
-trait selected_text {
-    fn get_selected_text(&self) -> String;
-}
-
-impl selected_text for gtk::ComboBoxText {
-    fn get_selected_text(&self) -> String {
-        self.get_active_text()
-            .or(Some(glib::GString::from("")))
-            .as_ref()
-            .unwrap()
-            .to_string()
-    }
 }
 
 fn get_machines() -> Vec<String> {
@@ -105,7 +106,11 @@ fn update_results(
     beam_mu: &str,
     ssd: &str,
 ) -> Result<(String, String, String), String> {
-    Ok(("unimplemented".to_string(), "unimplemented".to_string(), "unimplemented".to_string()))
+    Ok((
+        "unimplemented".to_string(),
+        "unimplemented".to_string(),
+        "unimplemented".to_string(),
+    ))
 }
 
 fn build_actions(builder: &Builder) {
@@ -160,7 +165,9 @@ fn build_actions(builder: &Builder) {
     let lbl_expected_mu: gtk::Label = builder
         .get_object("lbl_expected_mu")
         .expect("Unable to get lbl_expected_mu");
-    let lbl_error : gtk::Label = builder.get_object("lbl_error").expect("Unable to get lbl_error");
+    let lbl_error: gtk::Label = builder
+        .get_object("lbl_error")
+        .expect("Unable to get lbl_error");
 
     cb_machine.connect_changed(clone!(
     @weak cb_machine, @weak cb_energy => move |_| {
@@ -303,14 +310,95 @@ fn callback_update(
         }
     }
 }
+#[async_std::main]
+async fn main() {
+    simple_logger::init_with_level(Level::Trace).unwrap();
+    println!("EMU check UI");
+    println!("------------");
+    let opt_dir_default = dirs::data_local_dir();
+    if opt_dir_default.is_none() {
+        error!("Unable to determine the local data directory for the current user.");
+        exit(1);
+    }
+    let mut pb_dir_default = opt_dir_default.unwrap();
+    pb_dir_default.push("emu_check_ui");
+    let opt_str_dir_default = pb_dir_default.to_str();
+    let matches = App::new("emu_check_ui")
+        .version(crate_version!())
+        .author(crate_authors!())
+        .about(crate_description!())
+        .arg(
+            Arg::with_name("dir")
+                .help(
+                    "Directory containing the outputfactors and \
+                field defining apertures per energy. \
+                Each applicator has a seperate csv file for the \
+                output factors and field defining apertures.",
+                )
+                .index(1)
+                .required(false)
+                .default_value(opt_str_dir_default.unwrap()),
+        )
+        .get_matches();
+    let dirname = matches.value_of("dir").unwrap().to_string();
+    trace!("dirname: {}", dirname.as_str());
 
-fn main() {
-    let application = gtk::Application::new(Some("org.tv.emu_check.ui"), Default::default())
-        .expect("Initialization failed...");
+    // // old
+    // let application = gtk::Application::new(Some("org.tv.emu_check.ui"), Default::default())
+    //     .expect("Initialization failed...");
+    //
+    // application.connect_activate(|app| {
+    //     build_ui(app);
+    // });
+    //
+    // // Don't pass the commandline arguments to the run function
+    // // application.run(&args().collect::<Vec<_>>());
+    // application.run(&[]);
 
-    application.connect_activate(|app| {
-        build_ui(app);
+    // // Experiment
+    // let mut res_ac = AppController::new(dirname, &args().collect::<Vec<_>>()).await;
+    // if let Err(e) = res_ac {
+    //     error!("AppController reported an error: {}", e);
+    //     exit(1);
+    // }
+    // let mut ac = res_ac?;
+    // ac.build();
+
+    let res_application = gtk::Application::new(Some("org.tv.emu_check.ui"), Default::default())
+        .map_err(|e| AppError::GuiLaunch(e));
+    if let Err(e) = res_application {
+        error!("{}", e);
+        exit(1);
+    }
+    let application = res_application.unwrap();
+
+    application.connect_activate(move |app| {
+        let (tx_background, rx_background) = std::sync::mpsc::channel();
+        let (tx_ui, rx_ui) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+        // Create a controller
+        let res_controller =
+            AppController::new(dirname.as_str(), tx_background, rx_background, tx_ui, rx_ui);
+        result_if_error_exit!(res_controller);
+        let mut controller = res_controller.unwrap();
+
+        // Load the correction data
+        if let Err(e) = controller.load_correction_data() {
+            error!("{}", e);
+            exit(1);
+        }
+
+        // Build the user interface and actions
+        let res_build_ui = controller.build_ui();
+        result_if_error_exit!(res_build_ui);
+        let res_build_actions = controller.build_actions();
+        result_if_error_exit!(res_build_actions);
+
+        // Link the window and the application
+        let res_main_window = controller.get_main_window();
+        result_if_error_exit!(res_main_window);
+        let main_window = res_main_window.unwrap();
+        main_window.set_application(Some(app));
+        main_window.show_all();
     });
-
-    application.run(&args().collect::<Vec<_>>());
+    application.run(&[]);
 }
