@@ -1,4 +1,7 @@
 mod app;
-mod app_layout;
 mod connect;
 mod helper;
+mod main_layout;
+
+pub use app::*;
+pub use connect::*;
