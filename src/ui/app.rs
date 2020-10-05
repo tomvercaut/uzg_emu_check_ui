@@ -12,6 +12,18 @@ pub struct AppState {
     pub tx: flume::Sender<Event>,
 }
 
+#[derive(Debug, Clone)]
+struct LayoutState {
+    pub machine: String,
+    pub energy: String,
+    pub applicator: String,
+    pub fitment: String,
+    pub ssd: String,
+    pub beam_mu: String,
+    pub d2: String,
+    pub presc_dose: String,
+}
+
 pub struct App {
     pub window: gtk::Window,
     pub layout: MainLayout,
