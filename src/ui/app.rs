@@ -1,7 +1,7 @@
 use crate::ui::connect::{Connect, Event};
 use crate::ui::main_layout::MainLayout;
-use crate::{parse_f64, SelectedText};
-use emu_check::CorrectionDataSet;
+use crate::{combobox_set_value, combobox_set_value_or_none, parse_f64, SelectedText};
+use emu_check::{CalcParam, CorrectionDataSet};
 use flume::Sender;
 use gtk::prelude::*;
 use log::trace;
@@ -22,6 +22,19 @@ struct LayoutState {
     pub beam_mu: String,
     pub d2: String,
     pub presc_dose: String,
+}
+
+impl std::fmt::Display for LayoutState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "machine: {}\n", self.machine.as_str())?;
+        write!(f, "energy: {}\n", self.energy.as_str())?;
+        write!(f, "applicator: {}\n", self.applicator.as_str())?;
+        write!(f, "fitment: {}\n", self.fitment.as_str())?;
+        write!(f, "ssd: {}\n", self.ssd.as_str())?;
+        write!(f, "beam_mu: {}\n", self.beam_mu.as_str())?;
+        write!(f, "d2: {}\n", self.d2.as_str())?;
+        write!(f, "presc_dose: {}", self.presc_dose.as_str())
+    }
 }
 
 pub struct App {
@@ -91,44 +104,104 @@ impl App {
         parse_f64(self.get_energy_selected())
     }
 
+    pub fn set_energy_selected(&self, value: String) {
+        combobox_set_value_or_none(&self.layout.cb_energy, value);
+    }
+
     pub fn get_applicator_selected(&self) -> String {
         self.layout.cb_app.get_selected_text()
+    }
+
+    pub fn set_applicator_selected(&self, value: String) {
+        combobox_set_value_or_none(&self.layout.cb_app, value);
     }
 
     pub fn get_applicator_fitment_selected(&self) -> String {
         self.layout.cb_app_fitment.get_selected_text()
     }
 
+    pub fn set_applicator_fitment_selected(&self, value: String) {
+        combobox_set_value_or_none(&self.layout.cb_app_fitment, value);
+    }
+
+    pub fn get_ssd(&self) -> String {
+        self.layout.entry_ssd.get_text().to_string()
+    }
+
+    pub fn get_beam_mu(&self) -> String {
+        self.layout.entry_beam_mu.get_text().to_string()
+    }
+
+    pub fn get_d2(&self) -> String {
+        self.layout.entry_d2.get_text().to_string()
+    }
+
+    pub fn get_presc_dose(&self) -> String {
+        self.layout.entry_presc_dose.get_text().to_string()
+    }
+
+    fn get_layout_state(&self) -> LayoutState {
+        LayoutState {
+            machine: self.get_machine_selected(),
+            energy: self.get_energy_selected(),
+            applicator: self.get_applicator_selected(),
+            fitment: self.get_applicator_fitment_selected(),
+            ssd: self.get_ssd(),
+            beam_mu: self.get_beam_mu(),
+            d2: self.get_d2(),
+            presc_dose: self.get_presc_dose(),
+        }
+    }
+
     // The machine selection changed
     pub fn machine_changed(&self, name: &str) {
         trace!("fn machine_changed");
+        let state = self.get_layout_state();
+        trace!("state:\n{}", state);
         self.update_energies(name);
+        self.set_energy_selected("None".to_string());
+        self.set_applicator_selected("None".to_string());
+        self.set_applicator_fitment_selected("None".to_string());
+        self.update_calc();
     }
 
     fn update_energies(&self, machine: &str) {
         trace!("updating energies");
-        let mut j = 0;
-        let current_energy = self.get_energy_selected();
+        // let mut j = 0;
+        // let current_energy = self.get_energy_selected();
         let mut energies = vec![];
         if machine != "None" {
             energies = self.state.data.get_energies(machine);
         }
         self.layout.cb_energy.remove_all();
         self.layout.cb_energy.append_text("None");
-        for (i, energy) in energies.iter().enumerate() {
-            let se = energy.to_string();
-            self.layout.cb_energy.append_text(se.as_str());
-            if current_energy == se {
-                j = i + 1; // if matching, add one because None was already added to the list.
-            }
+        for energy in energies.iter() {
+            self.layout
+                .cb_energy
+                .append_text(energy.to_string().as_str());
         }
-        self.layout.cb_energy.set_active(Some(j as u32));
+        // combobox_set_value(&self.layout.cb_energy, current_energy);
+        // for (i, energy) in energies.iter().enumerate() {
+        //     let se = energy.to_string();
+        //     self.layout.cb_energy.append_text(se.as_str());
+        //     if current_energy == se {
+        //         j = i + 1; // if matching, add one because None was already added to the list.
+        //     }
+        // }
+        // self.layout.cb_energy.set_active(Some(j as u32));
     }
 
     // The energy selection changed
     pub fn energy_changed(&self, energy: &str) {
         trace!("fn energy_changed");
+        let state = self.get_layout_state();
+        trace!("state:\n{}", state);
         self.update_applicators(self.get_machine_selected().as_str(), energy);
+        self.set_applicator_selected("None".to_string());
+        self.set_applicator_fitment_selected("None".to_string());
+        self.update_calc();
+        // self.set_applicator_selected(state.applicator);
+        // self.set_applicator_fitment_selected(state.fitment);
     }
 
     // Update the applicators
@@ -146,24 +219,33 @@ impl App {
         }
         self.layout.cb_app.remove_all();
         self.layout.cb_app.append_text("None");
-        let mut j = 0;
-        for (i, applicator) in applicators.iter().enumerate() {
+        for applicator in applicators.iter() {
             self.layout.cb_app.append_text(applicator.as_str());
-            if current_app.as_str() == applicator.as_str() {
-                j = i + 1; // if matching, add one because None was already added to the list.
-            }
         }
-        self.layout.cb_app.set_active(Some(j as u32));
+        // combobox_set_value(&self.layout.cb_app, current_app);
+        // let mut j = 0;
+        // for (i, applicator) in applicators.iter().enumerate() {
+        //     self.layout.cb_app.append_text(applicator.as_str());
+        //     if current_app.as_str() == applicator.as_str() {
+        //         j = i + 1; // if matching, add one because None was already added to the list.
+        //     }
+        // }
+        // self.layout.cb_app.set_active(Some(j as u32));
     }
 
     // The applicator selection changed
     pub fn applicator_changed(&self, applicator: &str) {
         trace!("fn applicator_changed");
+        let state = self.get_layout_state();
+        trace!("state:\n{}", state);
         self.update_applicator_fitments(
             self.get_machine_selected().as_str(),
             self.get_energy_selected().as_str(),
             applicator,
         );
+        self.set_applicator_fitment_selected("None".to_string());
+        self.update_calc();
+        // self.set_applicator_fitment_selected(state.fitment);
     }
 
     // Update the applicator fitments
@@ -196,23 +278,32 @@ impl App {
     }
 
     pub fn applicator_fitment_changed(&self, _fitment: &str) {
-        trace!("fn applicator_fitment_changed")
+        trace!("fn applicator_fitment_changed");
+        self.update_calc();
     }
 
     pub fn ssd_changed(&self, _ssd: &str) {
         trace!("fn ssd_changed");
+        self.update_calc();
     }
 
     pub fn beam_mu_changed(&self, _beam_mu: &str) {
         trace!("fn beam_mu_changed");
+        self.update_calc();
     }
 
     pub fn d2_changed(&self, _d2: &str) {
         trace!("d2_changed");
+        self.update_calc();
     }
 
     pub fn prescription_dose_changed(&self, _presc_dose: &str) {
         trace!("prescription_dose_changed");
+        self.update_calc();
+    }
+
+    fn update_calc(&self) {
+        let state = self.get_layout_state();
     }
 
     // Quit the application
